@@ -1,16 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * IconDock – Trimble Connect kompaktne overlay (mudeli peal, vasak alumine nurk)
- * --------------------------------------------------------------------------------
- * • Puhas overlay ILMA Trimble'i paneeli struktuuri kasutamata
- * • Vasakul all, mudeli peal (nagu esimesel snipil näidatud)
- * • Kitsas vertikaalne dokk ikoonidega
- * • "Pildista + saada" — võtab snapshot'i, küsib kommentaari
- * • "Genereeri link" — URL ?projectId=&modelId=&guid=
- * • "Zoom GUID-iga" — fokusseerib IFC GUID-ile
- * • "Full screen" — lülitab täisekraani režiimi
- * • "Peida paneel" — peidab vasaku paneeli CSS-ga
+ * IconDock – Trimble Connect kompaktne overlay (VASAK alumine nurk, mudeli peal)
+ * -------------------------------------------------------------------------------
+ * ✓ AUTOMAATSELT PEIDAB VASAKU VALGE PANEELI kohe laadimisel
+ * ✓ Kompaktne ikoonidokk vasakul all
+ * ✓ Kõik funktsioonid: snapshot, link, zoom, full screen
  */
 
 type ViewerLike = any;
@@ -21,7 +16,6 @@ const COLORS = {
   white: "#FFFFFF",
 };
 
-// Eelistatud võtmed
 const ASSEMBLY_KEYS = [
   "Kooste märk (BLOCK)",
   "Assembly",
@@ -134,22 +128,81 @@ export default function IconDockTC({
   const [preview, setPreview] = useState<string>("");
   const projectIdRef = useRef<string | undefined>(initialProjectId);
   const [modelId, setModelId] = useState<string | undefined>(undefined);
+  const [panelHidden, setPanelHidden] = useState(false);
 
-  // Init: leia mudel
+  // ✨ AUTOMAATNE PEITMINE: init mudel + peida vasak paneel kohe
   useEffect(() => {
     (async () => {
       const id = await resolveActiveModelId(viewer);
       setModelId(id);
     })();
+
+    // PEIDA VASAK PANEEL AUTOMAATSELT
+    const styleId = "tc-auto-hide-left-panel";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
+        /* =====================================================
+           AUTOMAATNE VASAKU PANEELI PEITMINE
+           ===================================================== */
+        
+        /* Peida kõik vasakpoolsed elemendid */
+        .tc-left-panel,
+        .modus-sidebar,
+        .left-navigation,
+        .navigation-pane,
+        .sidebar,
+        aside[class*="left"],
+        aside[class*="Left"],
+        div[class*="LeftPanel"],
+        div[class*="leftPanel"],
+        div[class*="SidePanel"]:first-of-type,
+        div[class*="sidebar"]:first-of-type,
+        aside:first-of-type,
+        nav:first-of-type {
+          display: none !important;
+          width: 0 !important;
+          opacity: 0 !important;
+        }
+        
+        /* Laienda viewer täislaiuseks */
+        .viewer-container,
+        .main-view,
+        .tc-3d-viewer,
+        .workspace-content,
+        div[class*="ViewerContainer"],
+        div[class*="MainContent"],
+        div[class*="workspace"],
+        main,
+        canvas {
+          width: 100% !important;
+          left: 0 !important;
+          margin-left: 0 !important;
+        }
+        
+        /* Erilised Trimble Connect selektorid */
+        [class*="WorkspaceLayout"] > aside:first-child,
+        [class*="MainLayout"] > aside:first-child {
+          display: none !important;
+        }
+      `;
+      document.head.appendChild(style);
+      setPanelHidden(true);
+      console.log("✓ Vasak paneel automaatselt peidetud");
+    }
   }, [viewer]);
 
-  // URL-ist GUID lugemine ja fokusseerimine
+  // URL-ist GUID lugemine
   useEffect(() => {
     (async () => {
       const u = new URL(window.location.href);
       const guid = u.searchParams.get("guid");
       const mId = u.searchParams.get("modelId") || modelId || (await resolveActiveModelId(viewer));
-      if (guid && mId) await focusByGuid(viewer, mId, guid);
+      if (guid && mId) {
+        await focusByGuid(viewer, mId, guid);
+        setToast(`🔍 Fokusseeritud: ${guid.substring(0, 12)}...`);
+      }
     })();
   }, [viewer, modelId]);
 
@@ -182,7 +235,7 @@ export default function IconDockTC({
       await navigator.clipboard.writeText(linkUrl);
       setToast("✓ Link kopeeritud");
     } catch {
-      setToast(`📋 ${linkUrl}`);
+      setToast(`📋 ${linkUrl.substring(0, 50)}...`);
     }
   }
 
@@ -214,27 +267,16 @@ export default function IconDockTC({
 
     const comment = window.prompt("Lisa kommentaar:", "") || "";
     
-    setToast(`✓ GUID: ${guid.substring(0, 8)}... | ASM: ${assembly}`);
+    setToast(`✓ GUID: ${guid.substring(0, 8)}... | ASM: ${assembly || "(puudub)"}`);
     setPreview(png);
 
-    // NB! Siin saada päris webhook'i:
-    // await fetch(WEBHOOK_URL, {
-    //   method: "POST",
-    //   headers: { "Content-Type": "application/json" },
-    //   body: JSON.stringify({
-    //     projectId: projectIdRef.current,
-    //     modelId: mId,
-    //     guid,
-    //     assembly,
-    //     comment,
-    //     screenshot: png
-    //   })
-    // });
+    // TODO: Saada webhook'i
+    // await fetch(WEBHOOK_URL, { ... });
   }
 
   async function actionZoomPrompt() {
     const guid = window.prompt("Sisesta IFC GUID:", "");
-    if (!guid) return;
+    if (!guid?.trim()) return;
     
     const mId = modelId || (await resolveActiveModelId(viewer));
     if (!mId) {
@@ -260,51 +302,36 @@ export default function IconDockTC({
     }
   }
 
-  function hideLeftPanel() {
-    // Peida Trimble Connect'i vasak paneel CSS-ga
-    const styleId = "tc-hide-left-panel";
+  function toggleLeftPanel() {
+    const styleId = "tc-auto-hide-left-panel";
+    const existing = document.getElementById(styleId);
     
-    if (document.getElementById(styleId)) {
-      // Kui juba peidetud, eemalda
-      document.getElementById(styleId)?.remove();
+    if (existing) {
+      existing.remove();
+      setPanelHidden(false);
       setToast("✓ Paneel nähtav");
-      return;
+    } else {
+      // Lisa peitmine uuesti
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.innerHTML = `
+        .tc-left-panel, .modus-sidebar, .left-navigation, .navigation-pane, .sidebar,
+        aside[class*="left"], aside[class*="Left"], div[class*="LeftPanel"],
+        div[class*="leftPanel"], aside:first-of-type { display: none !important; }
+        .viewer-container, .main-view, .tc-3d-viewer, main { 
+          width: 100% !important; left: 0 !important; margin-left: 0 !important; 
+        }
+      `;
+      document.head.appendChild(style);
+      setPanelHidden(true);
+      setToast("✓ Paneel peidetud");
     }
-
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.innerHTML = `
-      /* Peida Trimble Connect vasak paneel */
-      .tc-left-panel,
-      .modus-sidebar,
-      .left-navigation,
-      .navigation-pane,
-      .sidebar,
-      [class*="LeftPanel"],
-      [class*="leftPanel"],
-      [class*="SidePanel"]:first-child {
-        display: none !important;
-      }
-      
-      /* Laienda viewer täislaiuseks */
-      .viewer-container,
-      .main-view,
-      .tc-3d-viewer,
-      [class*="ViewerContainer"],
-      [class*="MainContent"] {
-        width: 100% !important;
-        left: 0 !important;
-        margin-left: 0 !important;
-      }
-    `;
-    document.head.appendChild(style);
-    setToast("✓ Paneel peidetud");
   }
 
-  // --- Render: VASAKUL ALL, kompaktne overlay ---
+  // --- Render ---
   return (
     <>
-      {/* Ujuv dock – VASAK alumine nurk, mudeli peal */}
+      {/* ✨ Ujuv dock VASAKUL ALL */}
       <div
         style={{
           position: "fixed",
@@ -318,10 +345,9 @@ export default function IconDockTC({
           display: "flex",
           flexDirection: "column",
           gap: 6,
-          zIndex: 999999, // Väga kõrge z-index, et oleks mudeli peal
+          zIndex: 999999,
         }}
       >
-        {/* Peamine nupurida */}
         <DockButton
           title="Pildista + saada"
           onClick={actionSnapAndSend}
@@ -333,16 +359,8 @@ export default function IconDockTC({
           icon={<LinkIcon />}
         />
 
-        {/* Eraldaja */}
-        <div
-          style={{
-            height: 1,
-            background: "rgba(255,255,255,0.3)",
-            margin: "2px 0",
-          }}
-        />
+        <Divider />
 
-        {/* Teisesed nupud */}
         <DockButton
           title="Zoom IFC GUID-iga"
           onClick={actionZoomPrompt}
@@ -354,21 +372,14 @@ export default function IconDockTC({
           icon={<FullScreenIcon />}
         />
         <DockButton
-          title="Peida/näita vasak paneel"
-          onClick={hideLeftPanel}
+          title={panelHidden ? "Näita vasakut paneeli" : "Peida vasak paneel"}
+          onClick={toggleLeftPanel}
           icon={<HidePanelIcon />}
+          accent={panelHidden}
         />
 
-        {/* Eraldaja */}
-        <div
-          style={{
-            height: 1,
-            background: "rgba(255,255,255,0.3)",
-            margin: "2px 0",
-          }}
-        />
+        <Divider />
 
-        {/* Seaded */}
         <DockButton
           title="Seaded"
           onClick={() => alert("Seadete dialoog (tuleb)")}
@@ -376,7 +387,7 @@ export default function IconDockTC({
         />
       </div>
 
-      {/* Toast - paremal all, et mitte katta doki */}
+      {/* Toast teated */}
       {toast && (
         <div
           style={{
@@ -393,6 +404,7 @@ export default function IconDockTC({
             maxWidth: 380,
             boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
             animation: "fadeIn 0.2s ease-out",
+            cursor: "pointer",
           }}
           onClick={() => setToast("")}
         >
@@ -400,7 +412,7 @@ export default function IconDockTC({
         </div>
       )}
 
-      {/* Preview (kui on) */}
+      {/* Preview modal */}
       {preview && (
         <div
           style={{
@@ -409,7 +421,7 @@ export default function IconDockTC({
             left: 0,
             right: 0,
             bottom: 0,
-            background: "rgba(0,0,0,0.8)",
+            background: "rgba(0,0,0,0.85)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -431,7 +443,6 @@ export default function IconDockTC({
         </div>
       )}
 
-      {/* Lisame fade-in animatsiooni */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
@@ -447,10 +458,12 @@ function DockButton({
   title,
   onClick,
   icon,
+  accent = false,
 }: {
   title: string;
   onClick: () => void;
   icon: React.ReactNode;
+  accent?: boolean;
 }) {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -464,7 +477,9 @@ function DockButton({
         width: 32,
         height: 32,
         borderRadius: 8,
-        background: isHovered ? "#FFFFFF" : "rgba(255,255,255,0.9)",
+        background: accent 
+          ? (isHovered ? "#4ADE80" : "#22C55E")
+          : (isHovered ? "#FFFFFF" : "rgba(255,255,255,0.9)"),
         border: "none",
         boxShadow: isHovered
           ? "0 4px 12px rgba(0,0,0,0.2)"
@@ -482,7 +497,19 @@ function DockButton({
   );
 }
 
-// --- Ikoonid (inline SVG) ----------------------------------------------------
+function Divider() {
+  return (
+    <div
+      style={{
+        height: 1,
+        background: "rgba(255,255,255,0.3)",
+        margin: "2px 0",
+      }}
+    />
+  );
+}
+
+// --- Ikoonid ---
 function CameraIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#0A3A67" strokeWidth="2">
@@ -505,8 +532,7 @@ function ZoomIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#0A3A67" strokeWidth="2">
       <circle cx="11" cy="11" r="8" />
-      <path d="M21 21l-4.35-4.35" />
-      <path d="M11 8v6M8 11h6" />
+      <path d="M21 21l-4.35-4.35M11 8v6M8 11h6" />
     </svg>
   );
 }
@@ -536,3 +562,7 @@ function SettingsIcon() {
     </svg>
   );
 }
+
+
+
+
