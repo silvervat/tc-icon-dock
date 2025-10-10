@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="et">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>TC Icon Dock</title>
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Kui Trimble Workspace injekteerib viewer'i globaalselt, eksponeeri see window-le.
+         Dev-režiimis võib viewer puududa – komponent kuvab siiski UI ja teated. -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
