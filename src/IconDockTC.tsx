@@ -7,10 +7,11 @@ import React, { useEffect, useRef, useState } from "react";
  * • "Genereeri link" — URL ?projectId=&modelId=&guid= ja kopeerib lõikepuhvrisse
  * • "Zoom GUID-iga" — valib ja fokusseerib vaate IFC GUID-ile
  * • "Full screen" — lülitab full screen režiimi (peidab valge paneeli)
+ * • "Peida paneel" — peidab vasaku valge paneeli CSS-ga
  * • Automaatne modelId tuvastus (visible/loaded/first)
  * • Omadused: getObjectProperties + IFC GUID konversioonid
  *
- * NB! Parandused: dock paremale (mudeli peale), lisatud full screen toggle valge paneeli peitmiseks.
+ * NB! Parandused: dock paremale (mudeli peale), lisatud full screen toggle valge paneeli peitmiseks, uus nupp CSS peitmiseks.
  */
 type ViewerLike = any; // Trimble ViewerAPI (Workspace API)
 const COLORS = {
@@ -177,6 +178,23 @@ export default function IconDockTC({ viewer, projectId: initialProjectId }: { vi
       document.exitFullscreen().then(() => setToast("Full screen välja")).catch(() => setToast("Full screen ebaõnnestus"));
     }
   }
+  function hideLeftPanel() {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      /* Peida vasak paneel - kohanda klassid vastavalt inspect'ile (F12) */
+      .tc-left-panel, .modus-sidebar, .left-navigation, .navigation-pane, .sidebar { 
+        display: none !important; 
+      }
+      /* Laienda viewer täislaiuseks */
+      .viewer-container, .main-view, .tc-3d-viewer { 
+        width: 100% !important; 
+        left: 0 !important; 
+        margin-left: 0 !important; 
+      }
+    `;
+    document.head.appendChild(style);
+    setToast("Vasak paneel peidetud (CSS-ga)");
+  }
   // Kui URL'is on guid, proovi fokusseerida
   useEffect(() => {
     (async () => {
@@ -195,7 +213,8 @@ export default function IconDockTC({ viewer, projectId: initialProjectId }: { vi
         <button title="Genereeri link valikule" onClick={actionMakeLink} style={btnStyleCompact}><LinkIcon/></button>
         <div style={{ height: 1, background: "rgba(255,255,255,.35)", margin: "4px 8px" }}/>
         <button title="Zoom IFC GUID-iga" onClick={actionZoomPrompt} style={btnStyleCompact}><ZoomIcon/></button>
-        <button title="Full screen (peidab valge paneeli)" onClick={toggleFullScreen} style={btnStyleCompact}><FullScreenIcon/></button>
+        <button title="Full screen (proovi peita paneel)" onClick={toggleFullScreen} style={btnStyleCompact}><FullScreenIcon/></button>
+        <button title="Peida vasak paneel (CSS)" onClick={hideLeftPanel} style={btnStyleCompact}><HidePanelIcon/></button>
         <button title="Seaded (demo)" onClick={() => alert("Lisa siia oma seadete dialoog")} style={btnStyleCompact}><SettingsIcon/></button>
       </div>
       {/* Õrn toast paremas allnurgas, et mitte katta vaadet */}
@@ -210,6 +229,7 @@ function CameraIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" ari
 function LinkIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M10 13a5 5 0 007.07 0l1.41-1.41a5 5 0 10-7.07-7.07L10 5" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M14 11a5 5 0 00-7.07 0L5.5 12.41a5 5 0 107.07 7.07L14 19" stroke="currentColor" strokeWidth="2" fill="none"/></svg>)}
 function ZoomIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M11 19a8 8 0 100-16 8 8 0 000 16z" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="2" fill="none"/></svg>)}
 function FullScreenIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" fill="currentColor"/></svg>)}
+function HidePanelIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M3 5h18v14H3z" fill="none" stroke="currentColor" strokeWidth="2"/><path d="M9 5v14" stroke="currentColor" strokeWidth="2"/></svg>)} // Lihtne ikoon paneeli peitmiseks
 function SettingsIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden><path d="M12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M19.4 15a7.97 7.97 0 00.1-6l2.1-1.2-2-3.4L17.5 5a8.03 8.03 0 00-5-.1L11 2H7l-.6 2.9a8.03 8.03 0 00-3.8 3.8L0 10.9 3.4 13l1.2-2.1a7.97 7.97 0 006 .1l1.2 2.1 3.4-2z" stroke="currentColor" strokeWidth="2" fill="none"/></svg>)}
 const btnStyleCompact: React.CSSProperties = {
   width: 40,
