@@ -1,28 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 
 /**
- * IconDock – Trimble Connect (ViewerAPI) integratsiooniga demo
- * -----------------------------------------------------------
- * ✔ Vasak ainult-ikoonide riba (≈52px)
- * ✔ "Pildista + saada" — võtab viewerist snapshot'i (või screenshot'i), küsib kommentaari
- * ✔ "Genereeri link" — loob URL-i ?projectId=&modelId=&guid= ja kopeerib lõikepuhvrisse
- * ✔ "Zoom GUID-iga" — seab valiku ja keskendab vaate GUID-ile (IFC GUID)
- * ✔ Automaatne modelId tuvastus: eelistab loaded/visible mudelit; muidu esimene
- * ✔ Omadused: kasutab ViewerAPI.getObjectProperties/convertToObjectIds (IFC GUID)
+ * IconDock – Trimble Connect (ViewerAPI) integratsiooniga overlay-dokk
+ * -------------------------------------------------------------------
+ * • Ainult ujuv kitsas ikooniriba mudeli PEAL (vasak alumine nurk)
+ * • "Pildista + saada" — võtab viewerist snapshot'i, küsib kommentaari
+ * • "Genereeri link" — URL ?projectId=&modelId=&guid= ja kopeerib lõikepuhvrisse
+ * • "Zoom GUID-iga" — valib ja fokusseerib vaate IFC GUID-ile
+ * • Automaatne modelId tuvastus (visible/loaded/first)
+ * • Omadused: getObjectProperties + IFC GUID konversioonid
  *
- * Märkused:
- * - Trimble Connect Workspace API viited (vaata ametlikke docs'e):
- *   • viewer.getLayers(modelId) — kihiinfo (kasutame hiljem filtrite jaoks) 
- *   • viewer.getModels(state?) — mudelite loetelu 
- *   • viewer.getSelection() — valik (runtimeId'd)
- *   • viewer.setSelection([...]) — valiku seadmine
- *   • viewer.convertToObjectIds(modelId, runtimeIds) — saab välised id'd (IFC GUID) 
- *   • viewer.convertToObjectRuntimeIds(modelId, objectIds) — IFC GUID → runtimeId 
- *   • viewer.getObjectProperties(modelId, runtimeIds) — omadused 
- *   • viewer.getSnapshot() | viewer.getScreenshot() — pilt
+ * NB! Parandused: eemaldatud mittevajalik topelt-JSX ja katkine rida self-testis.
  */
 
-type ViewerLike = any; // Eeldame Trimble ViewerAPI objekti (Workspace API)
+type ViewerLike = any; // Trimble ViewerAPI (Workspace API)
 
 const COLORS = {
   navy: "#0A3A67",
@@ -39,7 +30,7 @@ const ASSEMBLY_KEYS = [
 ];
 const IFC_GUID_KEYS = ["GUID_IFC", "IFC GUID", "GlobalId", "GUID"]; // fallbackina ka GUID
 
-// Utiliidid
+// --- Utiliidid ---------------------------------------------------------------
 function flattenProps(input: any): Record<string, string> {
   const out: Record<string, string> = {};
   const walk = (o: any, prefix = "") => {
@@ -63,14 +54,12 @@ function firstNonEmpty(obj: Record<string, string>, keys: string[]): string | un
   return undefined;
 }
 
-// --- Pealogi: Viewer ühendus + toimingud ------------------------------------
+// --- Viewer utiliidid --------------------------------------------------------
 async function resolveActiveModelId(viewer: ViewerLike): Promise<string | undefined> {
   try {
     if (!viewer?.getModels) return undefined;
-    // proovi "loaded" mudelid (kui enum/konstant pole kättesaadav, too kõik)
     const loaded = await viewer.getModels("loaded").catch(() => null);
     const list = (loaded && loaded.length ? loaded : await viewer.getModels()) || [];
-    // prioriteet: visible || loaded || esimene
     const visible = list.find((m: any) => m?.visible === true);
     return (visible?.id || list[0]?.id) as string | undefined;
   } catch {
@@ -82,10 +71,7 @@ async function getSelectionRuntimeIds(viewer: ViewerLike): Promise<{ modelId: st
   try {
     const sel = await viewer.getSelection?.();
     if (sel && Array.isArray(sel) && sel[0]?.modelId && sel[0]?.objectRuntimeIds?.length) {
-      // Workspace API: ModelObjects[]
-      const mId = sel[0].modelId as string;
-      const rids = sel[0].objectRuntimeIds as number[];
-      return { modelId: mId, runtimeIds: rids };
+      return { modelId: sel[0].modelId as string, runtimeIds: sel[0].objectRuntimeIds as number[] };
     }
   } catch {}
   return null;
@@ -134,8 +120,6 @@ async function focusByGuid(viewer: ViewerLike, modelId: string, guid: string) {
     const rids = await ifcGuidToRuntime(viewer, modelId, [guid]);
     if (!rids.length) return;
     await viewer.setSelection?.([{ modelId, objectRuntimeIds: rids }]);
-    // Heuristikaga keskendus: kui bbox API on saadaval, saad siit edasi kaamera kohandada
-    // (näiteks viewer.getObjectBoundingBoxes + viewer.setCamera), kuid minimaalne select töötab kohe
   } catch {}
 }
 
@@ -219,39 +203,23 @@ export default function IconDockTC({ viewer, projectId: initialProjectId }: { vi
     })();
   }, [viewer, modelId]);
 
+  // --- Overlay: ainult ujuv kitsas ikooniriba mudeli PEAL --------------------
   return (
-    <div style={{ fontFamily: "Inter, ui-sans-serif, system-ui", minHeight: "100vh", background: COLORS.slateBg }}>
-      {/* Icon dock */}
-      <div style={{ position: "fixed", top: 24, left: 24, width: 52, background: COLORS.navy, borderRadius: 12, boxShadow: "0 6px 18px rgba(0,0,0,0.18)", padding: 6, display: "flex", flexDirection: "column", gap: 8, zIndex: 9 }}>
-        <button title="Pildista + saada" onClick={actionSnapAndSend} style={btnStyle}><CameraIcon/></button>
-        <button title="Genereeri link valikule" onClick={actionMakeLink} style={btnStyle}><LinkIcon/></button>
-        <div style={{ height: 1, background: "rgba(255,255,255,.3)", margin: "4px 8px" }}/>
-        <button title="Zoom IFC GUID-iga" onClick={actionZoomPrompt} style={btnStyle}><ZoomIcon/></button>
-        <button title="Seaded (demo)" onClick={() => alert("Lisa siia oma seadete dialoog")} style={btnStyle}><SettingsIcon/></button>
+    <>
+      {/* Ujuv dokk – vasak alumine nurk, mudeli peal */}
+      <div style={{ position: "fixed", left: 12, bottom: 20, width: 48, background: COLORS.navy, borderRadius: 12, boxShadow: "0 10px 24px rgba(0,0,0,0.25)", padding: 6, display: "flex", flexDirection: "column", gap: 10, zIndex: 9999 }}>
+        <button title="Pildista + saada" onClick={actionSnapAndSend} style={btnStyleCompact}><CameraIcon/></button>
+        <button title="Genereeri link valikule" onClick={actionMakeLink} style={btnStyleCompact}><LinkIcon/></button>
+        <div style={{ height: 1, background: "rgba(255,255,255,.35)", margin: "4px 8px" }}/>
+        <button title="Zoom IFC GUID-iga" onClick={actionZoomPrompt} style={btnStyleCompact}><ZoomIcon/></button>
+        <button title="Seaded (demo)" onClick={() => alert("Lisa siia oma seadete dialoog")} style={btnStyleCompact}><SettingsIcon/></button>
       </div>
 
-      {/* Header */}
-      <div style={{ padding: "24px 24px 8px 92px" }}>
-        <h1 style={{ margin: 0, color: COLORS.navy }}>IconDock – TC ViewerAPI</h1>
-        <p style={{ marginTop: 6, color: "#475569" }}>Vali mudelist detail → loo link → hiljem avamine fokusseerib samale GUID-ile. Snapshoti saatmine läheb Apps Scripti.</p>
-        <div style={{ color: "#334155", fontSize: 13 }}>Akt. modelId: {modelId || "—"}</div>
-      </div>
-
-      {/* Output */}
-      <div style={{ padding: "0 24px 48px 92px", display: "grid", gap: 16 }}>
-        <div style={{ background: "#ECFEFF", border: "1px solid #BAE6FD", color: "#0369A1", padding: 12, borderRadius: 10 }}>
-          <div style={{ fontWeight: 600 }}>Viimane teade:</div>
-          <div style={{ whiteSpace: "pre-wrap" }}>{toast || "—"}</div>
-        </div>
-        {preview && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ color: "#0F172A", fontWeight: 600 }}>Snapshot (dataURL):</div>
-            <img src={preview} alt="snapshot" style={{ maxWidth: "100%", borderRadius: 12, border: `1px solid ${COLORS.cardBorder}` }} />
-          </div>
-        )}
-        <div style={{ color: "#334155", fontSize: 13 }}>Link {linkState}</div>
-      </div>
-    </div>
+      {/* Õrn toast paremas allnurgas, et mitte katta vaadet */}
+      {toast && (
+        <div style={{ position: "fixed", right: 16, bottom: 16, background: "rgba(15,23,42,0.92)", color: "#fff", padding: "8px 12px", borderRadius: 8, fontSize: 13, zIndex: 9999, maxWidth: 420 }}>{toast}</div>
+      )}
+    </>
   );
 }
 
@@ -264,7 +232,7 @@ function SettingsIcon(){return(<svg viewBox="0 0 24 24" width="22" height="22" a
 const btnStyle: React.CSSProperties = {
   width: 40,
   height: 40,
-  borderRadius: 10,
+  borderRadius: 12,
   background: "white",
   border: "1px solid rgba(0,0,0,0.08)",
   display: "grid",
@@ -272,10 +240,32 @@ const btnStyle: React.CSSProperties = {
   cursor: "pointer"
 };
 
+const btnStyleCompact: React.CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: 12,
+  background: "white",
+  border: "1px solid rgba(0,0,0,0.1)",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+  display: "grid",
+  placeItems: "center",
+  cursor: "pointer"
+};
+
 // --- Self-tests (ei muuda käitumist) ----------------------------------------
 try {
+  // Stiilide test
   console.assert(typeof btnStyle.cursor === "string", "btnStyle.cursor peab olema string");
   console.assert(typeof btnStyle.width === "number" && typeof btnStyle.height === "number", "Nupu mõõdud peavad olema numbrid");
+  console.assert(typeof btnStyleCompact.width === "number" && typeof btnStyleCompact.height === "number", "Compact-nupu mõõdud");
+
+  // Utiliitide testid
+  const flat = flattenProps({ A: 1, nest: { B: "x" } });
+  console.assert(flat.A === "1" && flat.B === "x" && flat["nest.B"] === "x", "flattenProps lamendab ja säilitab lühivõtmed");
+  console.assert(firstNonEmpty({ a: "", mark: "M1" }, ["mark"]) === "M1", "firstNonEmpty leiab esimese mitte-tühja võtme");
+  console.assert(firstNonEmpty({ MARK: "M2" }, ["mark"]) === "M2", "firstNonEmpty töötab case-insensitive");
+
+  // Linki test
   const url = new URL("https://x/");
   url.searchParams.set("projectId", "PID"); url.searchParams.set("modelId", "MID"); url.searchParams.set("guid", "G");
   console.assert(url.toString().includes("projectId=PID") && url.toString().includes("modelId=MID") && url.toString().includes("guid=G"), "Link peab sisaldama projectId/modelId/guid");
